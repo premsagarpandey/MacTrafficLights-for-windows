@@ -7,8 +7,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build-msvc:
-    name: Build with MSVC (Visual Studio 2022)
+  build-and-test:
+    name: Windows x64 Build & Verification
     runs-on: windows-latest
 
     steps:
@@ -18,22 +18,20 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build Solution (Release x64)
+      - name: Build Visual Studio Solution (Release x64)
         run: msbuild MacTrafficLights.sln /p:Configuration=Release /p:Platform=x64
 
-  build-cmake:
-    name: Build with CMake & Smoke Tests
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure CMake
+      - name: Configure CMake Build
         run: cmake -B build -A x64
 
-      - name: Build with CMake (Release)
+      - name: Compile with CMake (Release x64)
         run: cmake --build build --config Release
 
-      - name: Run Smoke Tests
+      - name: Run Automated Smoke Tests
         run: .\build\Release\test_smoke.exe
+
+      - name: Upload Standalone Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacTrafficLights-x64
+          path: MacTrafficLights.exe

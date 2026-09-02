@@ -69,6 +69,7 @@ std::wstring WindowFilter::GetWindowTitle(HWND hwnd) {
 
 bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return false;
+    if (hwnd == GetDesktopWindow()) return false;
 
     // 1. Must be visible
     if (!IsWindowVisible(hwnd)) return false;
