@@ -18,6 +18,30 @@ bool WindowFilter::IsWindowCloaked(HWND hwnd) {
     return false;
 }
 
+bool WindowFilter::IsWindowFullScreen(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return false;
+
+    RECT rc = { 0 };
+    if (!GetWindowRect(hwnd, &rc)) return false;
+
+    HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (!hMon) return false;
+
+    MONITORINFO mi = { sizeof(mi) };
+    if (!GetMonitorInfoW(hMon, &mi)) return false;
+
+    // Check if window bounds cover or exceed the monitor area
+    if (rc.left <= mi.rcMonitor.left && rc.top <= mi.rcMonitor.top &&
+        rc.right >= mi.rcMonitor.right && rc.bottom >= mi.rcMonitor.bottom) {
+        LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        // Borderless, popup, or window without title bar caption
+        if (!(style & WS_CAPTION) || (style & WS_POPUP)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::wstring WindowFilter::GetProcessNameForWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return L"";
 
@@ -85,7 +109,10 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     // 4. Must not be cloaked by DWM (virtual desktop / suspended UWP)
     if (IsWindowCloaked(hwnd)) return false;
 
-    // 5. Inspect Styles
+    // 5. Must not be in borderless/popup full-screen mode (games, YouTube F11)
+    if (IsWindowFullScreen(hwnd)) return false;
+
+    // 6. Inspect Styles
     LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
     LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
 
@@ -104,14 +131,14 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
         return false;
     }
 
-    // 6. Check size - reject 0x0 or miniature hidden tracking windows
+    // 7. Check size - reject 0x0 or miniature hidden tracking windows
     RECT rc = { 0 };
     if (!GetWindowRect(hwnd, &rc)) return false;
     int width = rc.right - rc.left;
     int height = rc.bottom - rc.top;
     if (width < 140 || height < 80) return false;
 
-    // 7. Check Class Name against known shell, system, and desktop classes
+    // 8. Check Class Name against known shell, system, and desktop classes
     std::wstring cls = GetClassNameForWindow(hwnd);
 
     // Shell & Desktop exclusions
@@ -119,6 +146,7 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     if (cls == L"Shell_TrayWnd" || cls == L"Shell_SecondaryTrayWnd") return false; // Taskbars
     if (cls == L"Windows.UI.Core.CoreWindow") return false; // Start Menu, Notification Center, Search
     if (cls == L"Xaml_WindowedPopupClass" || cls == L"PopupHost") return false; // Flyouts
+    if (cls == L"Shell_Flyout" || cls == L"Windows.UI.Input.InputSite.WindowClass") return false; // Win11 menus/flyouts
     if (cls == L"TopLevelWindowForOverflowXamlIsland") return false; // Overflow islands
     if (cls == L"TaskListThumbnailWnd" || cls == L"TaskListOverlayWnd") return false; // Task view
     if (cls == L"ForegroundStaging") return false;
@@ -126,7 +154,7 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     if (cls == L"NativeHWNDHost") return false;
     if (cls == L"Button" || cls == L"Static" || cls == L"Edit") return false;
 
-    // 8. Check process name against user configured exclusions
+    // 9. Check process name against user configured exclusions
     std::wstring procName = GetProcessNameForWindow(hwnd);
     if (ConfigManager::Instance().IsProcessExcluded(procName)) {
         return false;

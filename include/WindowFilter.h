@@ -10,10 +10,13 @@ public:
     // Determines if a window is an eligible top-level application window
     static bool IsEligibleWindow(HWND hwnd);
 
-    // Determines if a window is cloaked by DWM (e.g. other virtual desktops or suspended UWP)
+    // Checks if a window is cloaked (e.g. suspended UWP, inactive virtual desktop)
     static bool IsWindowCloaked(HWND hwnd);
 
-    // Retrieves the base executable name for a given window (e.g. "notepad.exe")
+    // Checks if a window is in full-screen mode (e.g. games, full-screen video, F11)
+    static bool IsWindowFullScreen(HWND hwnd);
+
+    // Gets the executable process name for a window (lowercase).g. "notepad.exe")
     static std::wstring GetProcessNameForWindow(HWND hwnd);
 
     // Retrieves the class name of the window

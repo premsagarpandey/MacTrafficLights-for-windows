@@ -7,6 +7,10 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+
 namespace MacTrafficLights {
 
 static const wchar_t* OVERLAY_CLASS_NAME = L"MacTrafficLights_Overlay";
@@ -27,7 +31,7 @@ static UINT SafeGetDpiForWindow(HWND hwnd) {
 bool OverlayWindow::RegisterOverlayClass(HINSTANCE hInstance) {
     WNDCLASSEXW wcex = { 0 };
     wcex.cbSize = sizeof(WNDCLASSEXW);
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wcex.lpfnWndProc = OverlayWindow::WndProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = sizeof(OverlayWindow*);
@@ -41,7 +45,7 @@ bool OverlayWindow::RegisterOverlayClass(HINSTANCE hInstance) {
 
     WNDCLASSEXW wcm = { 0 };
     wcm.cbSize = sizeof(WNDCLASSEXW);
-    wcm.style = CS_HREDRAW | CS_VREDRAW;
+    wcm.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wcm.lpfnWndProc = OverlayWindow::WndProcRightMask;
     wcm.cbClsExtra = 0;
     wcm.cbWndExtra = sizeof(OverlayWindow*);
@@ -75,7 +79,11 @@ bool OverlayWindow::Create() {
     if (!m_targetHwnd || !IsWindow(m_targetHwnd)) return false;
 
     // Layered, tool window (not in Alt+Tab or taskbar), no-activate (doesn't steal focus)
-    DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+    // Only inherit WS_EX_TOPMOST if target window is genuinely topmost
+    DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+    if (GetWindowLongPtrW(m_targetHwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) {
+        exStyle |= WS_EX_TOPMOST;
+    }
     DWORD style = WS_POPUP;
 
     // 1. Left traffic lights overlay
@@ -181,22 +189,38 @@ void OverlayWindow::CalculateMetrics(int& buttonSize, int& spacing, int& leftMar
 }
 
 COLORREF OverlayWindow::DetectTitleBarColor() const {
+    // 1. Try official DWM caption color attribute
+    COLORREF dwmColor = 0xFFFFFFFF;
+    if (SUCCEEDED(DwmGetWindowAttribute(m_targetHwnd, DWMWA_CAPTION_COLOR, &dwmColor, sizeof(dwmColor)))) {
+        if (dwmColor != 0xFFFFFFFF && dwmColor != 0xFFFFFFFE && dwmColor != 0) {
+            return dwmColor;
+        }
+    }
+
+    // 2. Base palette depending on dark/light mode and active/inactive state
     BOOL darkMode = FALSE;
     DwmGetWindowAttribute(m_targetHwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
 
     COLORREF color = darkMode ? RGB(32, 32, 32) : RGB(243, 243, 243);
+    if (!m_isTargetActive) {
+        color = darkMode ? RGB(40, 40, 40) : RGB(248, 248, 248);
+    }
 
-    // Try sampling actual pixel from target window's title bar area
+    // 3. Pixel sampling: sample to the left of the right buttons to avoid window title text
     HDC hdcScreen = GetDC(NULL);
     if (hdcScreen) {
-        int sampleX = (m_lastTargetRect.left + m_lastTargetRect.right) / 2;
-        int sampleY = m_lastTargetRect.top + MulDiv(14, SafeGetDpiForWindow(m_targetHwnd), 96);
+        UINT dpi = SafeGetDpiForWindow(m_targetHwnd);
+        int sampleX = m_lastTargetRect.right - MulDiv(155, dpi, 96);
+        int sampleY = m_lastTargetRect.top + MulDiv(14, dpi, 96);
         if (IsZoomed(m_targetHwnd)) {
+            sampleX -= GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
             sampleY += GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
         }
-        COLORREF sampled = GetPixel(hdcScreen, sampleX, sampleY);
-        if (sampled != CLR_INVALID && sampled != 0) {
-            color = sampled;
+        if (sampleX > m_lastTargetRect.left + 50) {
+            COLORREF sampled = GetPixel(hdcScreen, sampleX, sampleY);
+            if (sampled != CLR_INVALID && sampled != 0 && sampled != RGB(255, 255, 255)) {
+                color = sampled;
+            }
         }
         ReleaseDC(NULL, hdcScreen);
     }
@@ -292,10 +316,25 @@ void OverlayWindow::UpdatePosition() {
         overlayY += cyBorder;
     }
 
+    // Precise Z-Order Placement: Attach directly above targetHwnd
+    bool isTargetTopmost = (GetWindowLongPtrW(m_targetHwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+    HWND insertAfter = HWND_TOP;
+    if (isTargetTopmost) {
+        insertAfter = HWND_TOPMOST;
+    } else if (m_targetHwnd != GetForegroundWindow()) {
+        HWND hPrev = GetWindow(m_targetHwnd, GW_HWNDPREV);
+        while (hPrev && (hPrev == m_hwnd || hPrev == m_hRightMaskWnd)) {
+            hPrev = GetWindow(hPrev, GW_HWNDPREV);
+        }
+        if (hPrev) {
+            insertAfter = hPrev;
+        }
+    }
+
     // 1. Position Left Traffic Lights
     SetWindowPos(
         m_hwnd,
-        HWND_TOP,
+        insertAfter,
         overlayX,
         overlayY,
         totalW,
@@ -307,7 +346,8 @@ void OverlayWindow::UpdatePosition() {
     const auto& config = ConfigManager::Instance().GetConfig();
     if (config.hideRightButtons) {
         if (!m_hRightMaskWnd) {
-            DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+            DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            if (isTargetTopmost) exStyle |= WS_EX_TOPMOST;
             m_hRightMaskWnd = CreateWindowExW(
                 exStyle, RIGHT_MASK_CLASS_NAME, L"MacTrafficLights_RightMask",
                 WS_POPUP, 0, 0, 140, 32, NULL, NULL, m_hInstance, this);
@@ -331,7 +371,7 @@ void OverlayWindow::UpdatePosition() {
 
             SetWindowPos(
                 m_hRightMaskWnd,
-                HWND_TOP,
+                m_hwnd,
                 rightX,
                 rightY,
                 rightW,
@@ -606,6 +646,17 @@ LRESULT OverlayWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             OnLButtonDown(LOWORD(lParam), HIWORD(lParam));
             return 0;
 
+        case WM_LBUTTONDBLCLK:
+            NativeActions::ToggleMaximizeRestore(m_targetHwnd);
+            return 0;
+
+        case WM_RBUTTONUP: {
+            POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+            ClientToScreen(m_hwnd, &pt);
+            SendMessageW(m_targetHwnd, WM_CONTEXTMENU, (WPARAM)m_targetHwnd, MAKELPARAM(pt.x, pt.y));
+            return 0;
+        }
+
         case WM_LBUTTONUP:
             OnLButtonUp(LOWORD(lParam), HIWORD(lParam));
             return 0;
@@ -644,6 +695,20 @@ LRESULT OverlayWindow::HandleRightMaskMessage(UINT msg, WPARAM wParam, LPARAM lP
             ClientToScreen(m_hRightMaskWnd, &pt);
             POINTS pts = { (SHORT)pt.x, (SHORT)pt.y };
             NativeActions::ForwardTitleBarDrag(m_targetHwnd, pts);
+            return 0;
+        }
+
+        case WM_LBUTTONDBLCLK: {
+            // Double clicking title bar area maximizes / restores window
+            NativeActions::ToggleMaximizeRestore(m_targetHwnd);
+            return 0;
+        }
+
+        case WM_RBUTTONUP: {
+            // Right-clicking title bar area opens system window menu
+            POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+            ClientToScreen(m_hRightMaskWnd, &pt);
+            SendMessageW(m_targetHwnd, WM_CONTEXTMENU, (WPARAM)m_targetHwnd, MAKELPARAM(pt.x, pt.y));
             return 0;
         }
 
