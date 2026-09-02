@@ -1,0 +1,40 @@
+# Visual Studio / MSBuild temporary files
+.vs/
+*.user
+*.suo
+*.sln.docstates
+*.aps
+*.ncb
+*.opendb
+Debug/
+Release/
+x64/
+x86/
+ARM64/
+[Bb]in/[Dd]ebug/
+[Bb]in/[Rr]elease/
+
+# Build artifacts and object files
+bin/*.o
+bin/*.obj
+bin/*.res.o
+bin/test_smoke.exe
+
+# Local logs and configuration
+*.log
+MacTrafficLights.log
+config/settings.ini
+
+# Windows OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msu
+
+# Crash dumps
+*.dmp
+*.dump

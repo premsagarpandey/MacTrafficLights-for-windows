@@ -1,0 +1,19 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.cpp text eol=crlf
+*.h text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.ini text eol=crlf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+
+# Binary files
+*.ico binary
+*.exe binary
+*.dll binary
