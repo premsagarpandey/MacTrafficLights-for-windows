@@ -29,6 +29,7 @@ void ConfigManager::ResetToDefaults() {
     m_config.verticalAlignment = 0;
     m_config.dimWhenInactive = true;
     m_config.showHoverSymbols = true;
+    m_config.hideRightButtons = true;
     m_config.startWithWindows = false;
     m_config.excludedProcesses = {
         L"dwm.exe",
@@ -70,6 +71,7 @@ void ConfigManager::Load() {
     m_config.verticalAlignment = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"VerticalAlignment", m_config.verticalAlignment, iniPath.c_str());
     m_config.dimWhenInactive = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"DimWhenInactive", m_config.dimWhenInactive ? 1 : 0, iniPath.c_str()) != 0);
     m_config.showHoverSymbols = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"ShowHoverSymbols", m_config.showHoverSymbols ? 1 : 0, iniPath.c_str()) != 0);
+    m_config.hideRightButtons = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"HideRightButtons", m_config.hideRightButtons ? 1 : 0, iniPath.c_str()) != 0);
 
     // Bounds checking
     if (m_config.buttonSize < 8) m_config.buttonSize = 8;
@@ -113,6 +115,7 @@ void ConfigManager::Save() {
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"VerticalAlignment", std::to_wstring(m_config.verticalAlignment).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"DimWhenInactive", m_config.dimWhenInactive ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"ShowHoverSymbols", m_config.showHoverSymbols ? L"1" : L"0", iniPath.c_str());
+    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"HideRightButtons", m_config.hideRightButtons ? L"1" : L"0", iniPath.c_str());
 
     std::wstring exclusionsStr;
     for (size_t i = 0; i < m_config.excludedProcesses.size(); ++i) {

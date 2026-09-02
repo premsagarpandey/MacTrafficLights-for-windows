@@ -22,6 +22,7 @@ void TestConfig() {
     assert(cfg.topMargin == 10);
     assert(cfg.dimWhenInactive == true);
     assert(cfg.showHoverSymbols == true);
+    assert(cfg.hideRightButtons == true);
 
     // Test exclusions
     assert(cfgMgr.IsProcessExcluded(L"dwm.exe") == true);

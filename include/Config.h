@@ -16,6 +16,7 @@ struct Configuration {
     int verticalAlignment = 0;   // 0 = Center in title bar, 1 = Fixed top margin
     bool dimWhenInactive = true; // Subtle grey/desaturated when target window is inactive
     bool showHoverSymbols = true;// Show x, -, + symbols on button hover
+    bool hideRightButtons = true;// Hide the standard Windows minimize/maximize/close buttons on the right side
     bool startWithWindows = false;
     std::vector<std::wstring> excludedProcesses;
 };

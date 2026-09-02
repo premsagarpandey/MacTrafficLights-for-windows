@@ -27,6 +27,7 @@ enum CtrlId {
     ID_LBL_TOP_MARGIN,
     ID_CHK_DIM,
     ID_CHK_HOVER,
+    ID_CHK_HIDE_RIGHT,
     ID_CHK_STARTUP,
     ID_EDT_EXCLUSIONS,
     ID_BTN_SAVE,
@@ -141,6 +142,8 @@ void SettingsDialog::InitializeControls(HWND hwnd) {
     y += 26;
     AddCheckbox(L"Show subtle symbols (x, -, +) on button hover", 20, y, 380, 22, ID_CHK_HOVER, cfg.showHoverSymbols);
     y += 26;
+    AddCheckbox(L"Hide standard Windows buttons on right side", 20, y, 380, 22, ID_CHK_HIDE_RIGHT, cfg.hideRightButtons);
+    y += 26;
     AddCheckbox(L"Start with Windows (Run on startup)", 20, y, 380, 22, ID_CHK_STARTUP, ConfigManager::Instance().IsStartWithWindowsEnabled());
     y += 35;
 
@@ -177,6 +180,7 @@ void SettingsDialog::SaveFromControls(HWND hwnd) {
     cfg.topMargin = (int)SendMessageW(GetDlgItem(hwnd, ID_SLD_TOP_MARGIN), TBM_GETPOS, 0, 0);
     cfg.dimWhenInactive = (SendMessageW(GetDlgItem(hwnd, ID_CHK_DIM), BM_GETCHECK, 0, 0) == BST_CHECKED);
     cfg.showHoverSymbols = (SendMessageW(GetDlgItem(hwnd, ID_CHK_HOVER), BM_GETCHECK, 0, 0) == BST_CHECKED);
+    cfg.hideRightButtons = (SendMessageW(GetDlgItem(hwnd, ID_CHK_HIDE_RIGHT), BM_GETCHECK, 0, 0) == BST_CHECKED);
     cfg.startWithWindows = (SendMessageW(GetDlgItem(hwnd, ID_CHK_STARTUP), BM_GETCHECK, 0, 0) == BST_CHECKED);
 
     wchar_t buf[2048] = { 0 };
@@ -209,6 +213,7 @@ void SettingsDialog::ResetDefaults(HWND hwnd) {
     SendMessageW(GetDlgItem(hwnd, ID_SLD_TOP_MARGIN), TBM_SETPOS, TRUE, cfg.topMargin);
     SendMessageW(GetDlgItem(hwnd, ID_CHK_DIM), BM_SETCHECK, cfg.dimWhenInactive ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(GetDlgItem(hwnd, ID_CHK_HOVER), BM_SETCHECK, cfg.showHoverSymbols ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(GetDlgItem(hwnd, ID_CHK_HIDE_RIGHT), BM_SETCHECK, cfg.hideRightButtons ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(GetDlgItem(hwnd, ID_CHK_STARTUP), BM_SETCHECK, cfg.startWithWindows ? BST_CHECKED : BST_UNCHECKED, 0);
 
     SetWindowTextW(GetDlgItem(hwnd, ID_LBL_SIZE), (std::to_wstring(cfg.buttonSize) + L" px").c_str());

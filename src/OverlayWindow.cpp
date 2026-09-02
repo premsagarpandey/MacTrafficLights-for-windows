@@ -10,6 +10,7 @@
 namespace MacTrafficLights {
 
 static const wchar_t* OVERLAY_CLASS_NAME = L"MacTrafficLights_Overlay";
+static const wchar_t* RIGHT_MASK_CLASS_NAME = L"MacTrafficLights_RightMask";
 
 typedef UINT (WINAPI *GetDpiForWindowProc)(HWND);
 
@@ -32,16 +33,32 @@ bool OverlayWindow::RegisterOverlayClass(HINSTANCE hInstance) {
     wcex.cbWndExtra = sizeof(OverlayWindow*);
     wcex.hInstance = hInstance;
     wcex.hCursor = LoadCursorW(NULL, IDC_ARROW);
-    wcex.hbrBackground = NULL; // Transparent
+    wcex.hbrBackground = NULL;
     wcex.lpszMenuName = NULL;
     wcex.lpszClassName = OVERLAY_CLASS_NAME;
 
-    ATOM atom = RegisterClassExW(&wcex);
-    return atom != 0;
+    ATOM a1 = RegisterClassExW(&wcex);
+
+    WNDCLASSEXW wcm = { 0 };
+    wcm.cbSize = sizeof(WNDCLASSEXW);
+    wcm.style = CS_HREDRAW | CS_VREDRAW;
+    wcm.lpfnWndProc = OverlayWindow::WndProcRightMask;
+    wcm.cbClsExtra = 0;
+    wcm.cbWndExtra = sizeof(OverlayWindow*);
+    wcm.hInstance = hInstance;
+    wcm.hCursor = LoadCursorW(NULL, IDC_ARROW);
+    wcm.hbrBackground = NULL;
+    wcm.lpszMenuName = NULL;
+    wcm.lpszClassName = RIGHT_MASK_CLASS_NAME;
+
+    ATOM a2 = RegisterClassExW(&wcm);
+
+    return (a1 != 0 && a2 != 0);
 }
 
 void OverlayWindow::UnregisterOverlayClass(HINSTANCE hInstance) {
     UnregisterClassW(OVERLAY_CLASS_NAME, hInstance);
+    UnregisterClassW(RIGHT_MASK_CLASS_NAME, hInstance);
 }
 
 OverlayWindow::OverlayWindow(HWND targetHwnd, HINSTANCE hInstance)
@@ -61,6 +78,7 @@ bool OverlayWindow::Create() {
     DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
     DWORD style = WS_POPUP;
 
+    // 1. Left traffic lights overlay
     m_hwnd = CreateWindowExW(
         exStyle,
         OVERLAY_CLASS_NAME,
@@ -74,15 +92,37 @@ bool OverlayWindow::Create() {
     );
 
     if (!m_hwnd) {
-        LOG_ERROR(L"Failed to create overlay window. Error: " + std::to_wstring(GetLastError()));
+        LOG_ERROR(L"Failed to create left overlay window. Error: " + std::to_wstring(GetLastError()));
         return false;
     }
 
     SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
+    // 2. Right mask overlay (covers standard Windows buttons)
+    m_hRightMaskWnd = CreateWindowExW(
+        exStyle,
+        RIGHT_MASK_CLASS_NAME,
+        L"MacTrafficLights_RightMask",
+        style,
+        0, 0, 140, 32,
+        NULL,
+        NULL,
+        m_hInstance,
+        this
+    );
+
+    if (m_hRightMaskWnd) {
+        SetWindowLongPtrW(m_hRightMaskWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    }
+
     UpdatePosition();
     Render();
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
+
+    if (m_hRightMaskWnd && ConfigManager::Instance().GetConfig().hideRightButtons) {
+        RenderRightMask();
+        ShowWindow(m_hRightMaskWnd, SW_SHOWNOACTIVATE);
+    }
 
     return true;
 }
@@ -93,11 +133,20 @@ void OverlayWindow::Destroy() {
         DestroyWindow(m_hwnd);
         m_hwnd = NULL;
     }
+    if (m_hRightMaskWnd) {
+        SetWindowLongPtrW(m_hRightMaskWnd, GWLP_USERDATA, 0);
+        DestroyWindow(m_hRightMaskWnd);
+        m_hRightMaskWnd = NULL;
+    }
 }
 
 void OverlayWindow::Show(bool show) {
     if (m_hwnd) {
         ShowWindow(m_hwnd, show ? SW_SHOWNOACTIVATE : SW_HIDE);
+    }
+    if (m_hRightMaskWnd) {
+        bool hideRight = ConfigManager::Instance().GetConfig().hideRightButtons;
+        ShowWindow(m_hRightMaskWnd, (show && hideRight) ? SW_SHOWNOACTIVATE : SW_HIDE);
     }
 }
 
@@ -105,6 +154,9 @@ void OverlayWindow::SetTargetActive(bool active) {
     if (m_isTargetActive != active) {
         m_isTargetActive = active;
         Render();
+        if (m_hRightMaskWnd) {
+            RenderRightMask();
+        }
     }
 }
 
@@ -121,7 +173,6 @@ void OverlayWindow::CalculateMetrics(int& buttonSize, int& spacing, int& leftMar
     leftMargin = MulDiv(config.leftMargin, dpi, 96);
     topMargin = MulDiv(config.topMargin, dpi, 96);
 
-    // Ensure sensible minimums
     if (buttonSize < 8) buttonSize = 8;
     if (spacing < 2) spacing = 2;
 
@@ -129,11 +180,93 @@ void OverlayWindow::CalculateMetrics(int& buttonSize, int& spacing, int& leftMar
     totalH = buttonSize + (2 * topMargin);
 }
 
+COLORREF OverlayWindow::DetectTitleBarColor() const {
+    BOOL darkMode = FALSE;
+    DwmGetWindowAttribute(m_targetHwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+
+    COLORREF color = darkMode ? RGB(32, 32, 32) : RGB(243, 243, 243);
+
+    // Try sampling actual pixel from target window's title bar area
+    HDC hdcScreen = GetDC(NULL);
+    if (hdcScreen) {
+        int sampleX = (m_lastTargetRect.left + m_lastTargetRect.right) / 2;
+        int sampleY = m_lastTargetRect.top + MulDiv(14, SafeGetDpiForWindow(m_targetHwnd), 96);
+        if (IsZoomed(m_targetHwnd)) {
+            sampleY += GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+        }
+        COLORREF sampled = GetPixel(hdcScreen, sampleX, sampleY);
+        if (sampled != CLR_INVALID && sampled != 0) {
+            color = sampled;
+        }
+        ReleaseDC(NULL, hdcScreen);
+    }
+    return color;
+}
+
+void OverlayWindow::RenderRightMask() {
+    if (!m_hRightMaskWnd) return;
+
+    UINT dpi = SafeGetDpiForWindow(m_targetHwnd);
+    int rightW = MulDiv(142, dpi, 96);
+    int rightH = MulDiv(34, dpi, 96);
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+
+    BITMAPINFO bmi = { 0 };
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = rightW;
+    bmi.bmiHeader.biHeight = rightH;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits = nullptr;
+    HBITMAP hBitmap = CreateDIBSection(hdcMem, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
+
+    COLORREF bgCol = DetectTitleBarColor();
+    BYTE r = GetRValue(bgCol);
+    BYTE g = GetGValue(bgCol);
+    BYTE b = GetBValue(bgCol);
+
+    BYTE* pixels = static_cast<BYTE*>(pBits);
+    int totalPixels = rightW * rightH;
+    for (int i = 0; i < totalPixels; ++i) {
+        pixels[i * 4 + 0] = b;
+        pixels[i * 4 + 1] = g;
+        pixels[i * 4 + 2] = r;
+        pixels[i * 4 + 3] = 255; // Fully opaque mask
+    }
+
+    POINT ptSrc = { 0, 0 };
+    SIZE size = { rightW, rightH };
+    BLENDFUNCTION blend = { 0 };
+    blend.BlendOp = AC_SRC_OVER;
+    blend.BlendFlags = 0;
+    blend.SourceConstantAlpha = 255;
+    blend.AlphaFormat = AC_SRC_ALPHA;
+
+    POINT ptDst = { 0, 0 };
+    RECT rc;
+    GetWindowRect(m_hRightMaskWnd, &rc);
+    ptDst.x = rc.left;
+    ptDst.y = rc.top;
+
+    UpdateLayeredWindow(m_hRightMaskWnd, hdcScreen, &ptDst, &size, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+    SelectObject(hdcMem, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+}
+
 void OverlayWindow::UpdatePosition() {
     if (!m_hwnd || !m_targetHwnd || !IsWindow(m_targetHwnd)) return;
 
     if (IsIconic(m_targetHwnd) || !IsWindowVisible(m_targetHwnd)) {
         ShowWindow(m_hwnd, SW_HIDE);
+        if (m_hRightMaskWnd) ShowWindow(m_hRightMaskWnd, SW_HIDE);
         return;
     }
 
@@ -142,6 +275,7 @@ void OverlayWindow::UpdatePosition() {
     if (FAILED(hr) || (targetRect.right - targetRect.left <= 0)) {
         GetWindowRect(m_targetHwnd, &targetRect);
     }
+    m_lastTargetRect = targetRect;
 
     int buttonSize, spacing, leftMargin, topMargin, totalW, totalH;
     CalculateMetrics(buttonSize, spacing, leftMargin, topMargin, totalW, totalH);
@@ -149,17 +283,16 @@ void OverlayWindow::UpdatePosition() {
     int overlayX = targetRect.left + leftMargin;
     int overlayY = targetRect.top + topMargin;
 
-    // Adjust for Windows 11 maximized window border overflow
+    int cxBorder = 0;
+    int cyBorder = 0;
     if (IsZoomed(m_targetHwnd)) {
-        int cxBorder = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-        int cyBorder = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-
-        // When maximized, targetRect starts off-screen (e.g. -8, -8), so compensate:
+        cxBorder = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+        cyBorder = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
         overlayX += cxBorder;
         overlayY += cyBorder;
     }
 
-    // Position overlay immediately above target window without stealing focus
+    // 1. Position Left Traffic Lights
     SetWindowPos(
         m_hwnd,
         HWND_TOP,
@@ -170,7 +303,46 @@ void OverlayWindow::UpdatePosition() {
         SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW
     );
 
-    m_lastTargetRect = targetRect;
+    // 2. Position Right Mask Overlay (if enabled)
+    const auto& config = ConfigManager::Instance().GetConfig();
+    if (config.hideRightButtons) {
+        if (!m_hRightMaskWnd) {
+            DWORD exStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+            m_hRightMaskWnd = CreateWindowExW(
+                exStyle, RIGHT_MASK_CLASS_NAME, L"MacTrafficLights_RightMask",
+                WS_POPUP, 0, 0, 140, 32, NULL, NULL, m_hInstance, this);
+            if (m_hRightMaskWnd) {
+                SetWindowLongPtrW(m_hRightMaskWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+            }
+        }
+
+        if (m_hRightMaskWnd) {
+            UINT dpi = SafeGetDpiForWindow(m_targetHwnd);
+            int rightW = MulDiv(142, dpi, 96);
+            int rightH = MulDiv(34, dpi, 96);
+
+            int rightX = targetRect.right - rightW;
+            int rightY = targetRect.top;
+
+            if (IsZoomed(m_targetHwnd)) {
+                rightX -= cxBorder;
+                rightY += cyBorder;
+            }
+
+            SetWindowPos(
+                m_hRightMaskWnd,
+                HWND_TOP,
+                rightX,
+                rightY,
+                rightW,
+                rightH,
+                SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW
+            );
+            RenderRightMask();
+        }
+    } else if (m_hRightMaskWnd) {
+        ShowWindow(m_hRightMaskWnd, SW_HIDE);
+    }
 }
 
 ButtonType OverlayWindow::HitTest(int x, int y) const {
@@ -185,7 +357,6 @@ ButtonType OverlayWindow::HitTest(int x, int y) const {
         int dx = x - centerX;
         int dy = y - centerY;
 
-        // Circular hit-test: dx^2 + dy^2 <= (radius + 1)^2
         if ((dx * dx + dy * dy) <= ((radius + 1) * (radius + 1))) {
             return static_cast<ButtonType>(i);
         }
@@ -203,10 +374,6 @@ void OverlayWindow::DrawTrafficLightButtons(Gdiplus::Graphics& g, int buttonSize
     const auto& config = ConfigManager::Instance().GetConfig();
     bool dim = config.dimWhenInactive && !m_isTargetActive;
 
-    // Colors matching clean macOS aesthetic
-    // Red: #FF5F56, Border: #E0443E
-    // Yellow: #FFBD2E, Border: #DEA123
-    // Green: #27C93F, Border: #1AAB29
     Color redFill(255, 255, 95, 86);
     Color redBorder(255, 224, 68, 62);
     Color redHover(255, 255, 115, 106);
@@ -222,7 +389,6 @@ void OverlayWindow::DrawTrafficLightButtons(Gdiplus::Graphics& g, int buttonSize
     Color greenHover(255, 60, 220, 84);
     Color greenPressed(255, 29, 151, 48);
 
-    // Dimmed inactive colors (subtle translucent/neutral)
     Color inactiveFill(180, 128, 128, 128);
     Color inactiveBorder(200, 100, 100, 100);
 
@@ -256,37 +422,29 @@ void OverlayWindow::DrawTrafficLightButtons(Gdiplus::Graphics& g, int buttonSize
             currentFill = buttons[i].hover;
         }
 
-        // 1. Draw button circular body
         SolidBrush brush(currentFill);
         g.FillEllipse(&brush, btnX, btnY, buttonSize, buttonSize);
 
-        // 2. Draw border
         Pen pen(currentBorder, 1.0f);
         g.DrawEllipse(&pen, (REAL)btnX, (REAL)btnY, (REAL)buttonSize, (REAL)buttonSize);
 
-        // 3. Draw subtle symbols on hover
         if (config.showHoverSymbols && (m_hoverButton != ButtonType::None)) {
             REAL centerX = (REAL)btnX + (REAL)buttonSize / 2.0f;
             REAL centerY = (REAL)btnY + (REAL)buttonSize / 2.0f;
             REAL symHalf = (REAL)buttonSize * 0.22f;
 
             if (buttons[i].type == ButtonType::Close) {
-                // 🔴 'x' symbol
                 Pen symPen(Color(220, 77, 0, 0), 1.2f);
                 g.DrawLine(&symPen, centerX - symHalf, centerY - symHalf, centerX + symHalf, centerY + symHalf);
                 g.DrawLine(&symPen, centerX + symHalf, centerY - symHalf, centerX - symHalf, centerY + symHalf);
             } else if (buttons[i].type == ButtonType::Minimize) {
-                // 🟡 '–' symbol
                 Pen symPen(Color(220, 102, 68, 0), 1.4f);
                 g.DrawLine(&symPen, centerX - symHalf, centerY, centerX + symHalf, centerY);
             } else if (buttons[i].type == ButtonType::Maximize) {
-                // 🟢 '+' symbol or diagonal arrows
                 Pen symPen(Color(220, 0, 77, 0), 1.2f);
                 if (NativeActions::IsWindowMaximized(m_targetHwnd)) {
-                    // Restore symbol: two opposite diagonal triangles
                     g.DrawLine(&symPen, centerX - symHalf, centerY - symHalf, centerX + symHalf, centerY + symHalf);
                 } else {
-                    // Maximize symbol: '+'
                     g.DrawLine(&symPen, centerX - symHalf, centerY, centerX + symHalf, centerY);
                     g.DrawLine(&symPen, centerX, centerY - symHalf, centerX, centerY + symHalf);
                 }
@@ -316,14 +474,12 @@ void OverlayWindow::Render() {
     HBITMAP hBitmap = CreateDIBSection(hdcMem, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
     HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
 
-    // Render using GDI+
     {
         Gdiplus::Graphics graphics(hdcMem);
-        graphics.Clear(Gdiplus::Color(0, 0, 0, 0)); // Pure transparent background
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
         DrawTrafficLightButtons(graphics, buttonSize, spacing, leftMargin, topMargin);
     }
 
-    // Apply 32-bit premultiplied alpha for UpdateLayeredWindow
     BYTE* pixels = static_cast<BYTE*>(pBits);
     int totalPixels = totalW * totalH;
     for (int i = 0; i < totalPixels; ++i) {
@@ -394,7 +550,6 @@ void OverlayWindow::OnLButtonDown(int x, int y) {
         SetCapture(m_hwnd);
         Render();
     } else {
-        // Clicked outside buttons: Forward title bar drag to target window
         POINT pt = { x, y };
         ClientToScreen(m_hwnd, &pt);
         POINTS pts = { (SHORT)pt.x, (SHORT)pt.y };
@@ -471,6 +626,39 @@ LRESULT OverlayWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
     }
     return DefWindowProcW(m_hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK OverlayWindow::WndProcRightMask(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    OverlayWindow* pThis = reinterpret_cast<OverlayWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (pThis) {
+        return pThis->HandleRightMaskMessage(msg, wParam, lParam);
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT OverlayWindow::HandleRightMaskMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_LBUTTONDOWN: {
+            // Forward title bar drag when clicked on right mask
+            POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+            ClientToScreen(m_hRightMaskWnd, &pt);
+            POINTS pts = { (SHORT)pt.x, (SHORT)pt.y };
+            NativeActions::ForwardTitleBarDrag(m_targetHwnd, pts);
+            return 0;
+        }
+
+        case WM_SETCURSOR:
+            SetCursor(LoadCursorW(NULL, IDC_ARROW));
+            return TRUE;
+
+        case WM_NCHITTEST:
+            return HTCLIENT;
+
+        case WM_DESTROY:
+            m_hRightMaskWnd = NULL;
+            return 0;
+    }
+    return DefWindowProcW(m_hRightMaskWnd, msg, wParam, lParam);
 }
 
 } // namespace MacTrafficLights

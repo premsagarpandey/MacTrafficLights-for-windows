@@ -26,16 +26,20 @@ public:
     void Destroy();
 
     HWND GetHwnd() const { return m_hwnd; }
+    HWND GetRightMaskHwnd() const { return m_hRightMaskWnd; }
     HWND GetTargetHwnd() const { return m_targetHwnd; }
 
     void UpdatePosition();
     void Render();
+    void RenderRightMask();
     void SetTargetActive(bool active);
     void Show(bool show);
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK WndProcRightMask(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
+    LRESULT HandleRightMaskMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
     void OnMouseMove(int x, int y);
     void OnMouseLeave();
@@ -46,8 +50,10 @@ private:
     UINT GetTargetDpi() const;
     void CalculateMetrics(int& buttonSize, int& spacing, int& leftMargin, int& topMargin, int& totalW, int& totalH) const;
     void DrawTrafficLightButtons(Gdiplus::Graphics& g, int buttonSize, int spacing, int leftMargin, int topMargin);
+    COLORREF DetectTitleBarColor() const;
 
     HWND m_hwnd = NULL;
+    HWND m_hRightMaskWnd = NULL;
     HWND m_targetHwnd = NULL;
     HINSTANCE m_hInstance = NULL;
 
