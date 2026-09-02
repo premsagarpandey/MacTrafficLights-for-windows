@@ -8,24 +8,30 @@ on:
 
 jobs:
   build-and-test:
-    name: Windows x64 Build & Verification
+    name: Windows x64 Visual Studio Build & Test
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure CMake Build
-        run: cmake -B build -A x64
+      - name: Setup MSBuild & MSVC Environment
+        uses: microsoft/setup-msbuild@v2
 
-      - name: Compile with CMake (Release x64)
-        run: cmake --build build --config Release --verbose
+      - name: Setup Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Run Automated Smoke Tests
-        run: .\build\Release\test_smoke.exe
+      - name: Build Standalone Solution (Release x64)
+        run: msbuild MacTrafficLights.sln /p:Configuration=Release /p:Platform=x64
+
+      - name: Compile Automated Smoke Test Suite
+        run: cl /std:c++17 /O2 /EHsc /DUNICODE /D_UNICODE /Iinclude tests\test_smoke.cpp src\Config.cpp src\Logger.cpp src\Diagnostic.cpp src\NativeActions.cpp src\WindowFilter.cpp /Fe:test_smoke.exe /link user32.lib gdi32.lib shell32.lib dwmapi.lib psapi.lib advapi32.lib
+
+      - name: Run Smoke Tests
+        run: .\test_smoke.exe
 
       - name: Upload Standalone Executable Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MacTrafficLights-x64
-          path: build/Release/MacTrafficLights.exe
+          path: x64/Release/MacTrafficLights.exe
