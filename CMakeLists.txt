@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_definitions(-DUNICODE -D_UNICODE)
 
-include_directories(include resources)
+# Ensure RC compiler finds headers and icons in include and resources directories
+set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /I \"${CMAKE_CURRENT_SOURCE_DIR}/include\" /I \"${CMAKE_CURRENT_SOURCE_DIR}/resources\"")
 
 set(SOURCES
     src/main.cpp
@@ -26,6 +27,11 @@ set(SOURCES
 
 add_executable(MacTrafficLights WIN32 ${SOURCES})
 
+target_include_directories(MacTrafficLights PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources
+)
+
 target_link_libraries(MacTrafficLights PRIVATE
     gdi32
     user32
@@ -37,7 +43,7 @@ target_link_libraries(MacTrafficLights PRIVATE
     advapi32
 )
 
-# Test target
+# Smoke test suite
 add_executable(test_smoke
     tests/test_smoke.cpp
     src/Config.cpp
@@ -45,6 +51,10 @@ add_executable(test_smoke
     src/Diagnostic.cpp
     src/NativeActions.cpp
     src/WindowFilter.cpp
+)
+
+target_include_directories(test_smoke PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(test_smoke PRIVATE

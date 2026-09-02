@@ -15,17 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Build Visual Studio Solution (Release x64)
-        run: msbuild MacTrafficLights.sln /p:Configuration=Release /p:Platform=x64
-
       - name: Configure CMake Build
         run: cmake -B build -A x64
 
       - name: Compile with CMake (Release x64)
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --verbose
 
       - name: Run Automated Smoke Tests
         run: .\build\Release\test_smoke.exe
