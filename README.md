@@ -1,6 +1,6 @@
 # MacTrafficLights for Windows 11
 
-[![CI](https://github.com/OWNER/MacTrafficLights-for-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/MacTrafficLights-for-windows/actions)
+[![CI](https://github.com/premsagarpandey/MacTrafficLights-for-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/premsagarpandey/MacTrafficLights-for-windows/actions)
 ![Platform: Windows 11](https://img.shields.io/badge/Platform-Windows%2011%20x64-blue.svg)
 ![Language: C++17](https://img.shields.io/badge/Language-C%2B%2B17%20%2F%20C%2B%2B20-brightgreen.svg)
 ![Architecture: Zero-Injection](https://img.shields.io/badge/Architecture-Zero--Injection-success.svg)
