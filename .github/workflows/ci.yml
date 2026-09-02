@@ -8,24 +8,26 @@ on:
 
 jobs:
   build-and-test:
-    name: Windows x64 Visual Studio Build & Test
+    name: Windows x64 Build & Test
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild & MSVC Environment
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Setup Developer Command Prompt
+      - name: Setup MSVC Developer Environment
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-      - name: Build Standalone Solution (Release x64)
-        run: msbuild MacTrafficLights.sln /p:Configuration=Release /p:Platform=x64
+      - name: Compile Windows Resources
+        run: rc.exe /i include /i resources resources\MacTrafficLights.rc
+
+      - name: Compile Standalone Executable (Release x64)
+        run: cl.exe /std:c++17 /O2 /GL /EHsc /DUNICODE /D_UNICODE /Iinclude src\*.cpp resources\MacTrafficLights.res /Fe:MacTrafficLights.exe /link /SUBSYSTEM:WINDOWS /LTCG user32.lib gdi32.lib shell32.lib dwmapi.lib gdiplus.lib comctl32.lib psapi.lib advapi32.lib
 
       - name: Compile Automated Smoke Test Suite
-        run: cl /std:c++17 /O2 /EHsc /DUNICODE /D_UNICODE /Iinclude tests\test_smoke.cpp src\Config.cpp src\Logger.cpp src\Diagnostic.cpp src\NativeActions.cpp src\WindowFilter.cpp /Fe:test_smoke.exe /link user32.lib gdi32.lib shell32.lib dwmapi.lib psapi.lib advapi32.lib
+        run: cl.exe /std:c++17 /O2 /EHsc /DUNICODE /D_UNICODE /Iinclude tests\test_smoke.cpp src\Config.cpp src\Logger.cpp src\Diagnostic.cpp src\NativeActions.cpp src\WindowFilter.cpp /Fe:test_smoke.exe /link user32.lib gdi32.lib shell32.lib dwmapi.lib psapi.lib advapi32.lib
 
       - name: Run Smoke Tests
         run: .\test_smoke.exe
@@ -34,4 +36,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MacTrafficLights-x64
-          path: x64/Release/MacTrafficLights.exe
+          path: MacTrafficLights.exe
