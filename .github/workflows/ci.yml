@@ -27,7 +27,7 @@ jobs:
         run: cl.exe /std:c++17 /O2 /GL /EHsc /DUNICODE /D_UNICODE /Iinclude src\*.cpp resources\MacTrafficLights.res /Fe:MacTrafficLights.exe /link /SUBSYSTEM:WINDOWS /LTCG user32.lib gdi32.lib shell32.lib dwmapi.lib gdiplus.lib comctl32.lib psapi.lib advapi32.lib
 
       - name: Compile Automated Smoke Test Suite
-        run: cl.exe /std:c++17 /O2 /EHsc /DUNICODE /D_UNICODE /Iinclude tests\test_smoke.cpp src\Config.cpp src\Logger.cpp src\Diagnostic.cpp src\NativeActions.cpp src\WindowFilter.cpp /Fe:test_smoke.exe /link user32.lib gdi32.lib shell32.lib dwmapi.lib psapi.lib advapi32.lib
+        run: cl.exe /std:c++17 /O2 /EHsc /DUNICODE /D_UNICODE /Iinclude tests\test_smoke.cpp src\Config.cpp src\Logger.cpp src\NativeActions.cpp src\WindowFilter.cpp /Fe:test_smoke.exe /link user32.lib gdi32.lib shell32.lib dwmapi.lib psapi.lib advapi32.lib
 
       - name: Run Smoke Tests
         run: .\test_smoke.exe
