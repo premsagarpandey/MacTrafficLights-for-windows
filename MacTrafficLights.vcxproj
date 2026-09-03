@@ -79,28 +79,22 @@
   <ItemGroup>
     <ClInclude Include="include\App.h" />
     <ClInclude Include="include\Config.h" />
-    <ClInclude Include="include\Diagnostic.h" />
-    <ClInclude Include="include\DiagnosticDialog.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\NativeActions.h" />
     <ClInclude Include="include\OverlayManager.h" />
     <ClInclude Include="include\OverlayWindow.h" />
     <ClInclude Include="include\Resource.h" />
-    <ClInclude Include="include\SettingsDialog.h" />
     <ClInclude Include="include\TrayIcon.h" />
     <ClInclude Include="include\WindowFilter.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\App.cpp" />
     <ClCompile Include="src\Config.cpp" />
-    <ClCompile Include="src\Diagnostic.cpp" />
-    <ClCompile Include="src\DiagnosticDialog.cpp" />
     <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\NativeActions.cpp" />
     <ClCompile Include="src\OverlayManager.cpp" />
     <ClCompile Include="src\OverlayWindow.cpp" />
-    <ClCompile Include="src\SettingsDialog.cpp" />
     <ClCompile Include="src\TrayIcon.cpp" />
     <ClCompile Include="src\WindowFilter.cpp" />
   </ItemGroup>

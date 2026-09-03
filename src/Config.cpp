@@ -7,8 +7,6 @@ namespace MacTrafficLights {
 static const wchar_t* INI_SECTION_GENERAL = L"General";
 static const wchar_t* INI_SECTION_APPEARANCE = L"Appearance";
 static const wchar_t* INI_SECTION_EXCLUSIONS = L"Exclusions";
-static const wchar_t* RUN_REG_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-static const wchar_t* APP_REG_NAME = L"MacTrafficLights";
 
 ConfigManager& ConfigManager::Instance() {
     static ConfigManager instance;
@@ -24,13 +22,9 @@ void ConfigManager::ResetToDefaults() {
     m_config.enabled = true;
     m_config.buttonSize = 12;
     m_config.buttonSpacing = 8;
-    m_config.leftMargin = 14;
+    m_config.rightMargin = 14;
     m_config.topMargin = 10;
-    m_config.verticalAlignment = 0;
     m_config.dimWhenInactive = true;
-    m_config.showHoverSymbols = true;
-    m_config.hideRightButtons = true;
-    m_config.startWithWindows = false;
     m_config.excludedProcesses = {
         L"dwm.exe",
         L"shellexperiencehost.exe",
@@ -66,20 +60,17 @@ void ConfigManager::Load() {
     m_config.enabled = (GetPrivateProfileIntW(INI_SECTION_GENERAL, L"Enabled", m_config.enabled ? 1 : 0, iniPath.c_str()) != 0);
     m_config.buttonSize = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"ButtonSize", m_config.buttonSize, iniPath.c_str());
     m_config.buttonSpacing = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"ButtonSpacing", m_config.buttonSpacing, iniPath.c_str());
-    m_config.leftMargin = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"LeftMargin", m_config.leftMargin, iniPath.c_str());
+    m_config.rightMargin = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"RightMargin", m_config.rightMargin, iniPath.c_str());
     m_config.topMargin = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"TopMargin", m_config.topMargin, iniPath.c_str());
-    m_config.verticalAlignment = GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"VerticalAlignment", m_config.verticalAlignment, iniPath.c_str());
     m_config.dimWhenInactive = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"DimWhenInactive", m_config.dimWhenInactive ? 1 : 0, iniPath.c_str()) != 0);
-    m_config.showHoverSymbols = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"ShowHoverSymbols", m_config.showHoverSymbols ? 1 : 0, iniPath.c_str()) != 0);
-    m_config.hideRightButtons = (GetPrivateProfileIntW(INI_SECTION_APPEARANCE, L"HideRightButtons", m_config.hideRightButtons ? 1 : 0, iniPath.c_str()) != 0);
 
     // Bounds checking
     if (m_config.buttonSize < 8) m_config.buttonSize = 8;
     if (m_config.buttonSize > 24) m_config.buttonSize = 24;
     if (m_config.buttonSpacing < 4) m_config.buttonSpacing = 4;
     if (m_config.buttonSpacing > 20) m_config.buttonSpacing = 20;
-    if (m_config.leftMargin < 2) m_config.leftMargin = 2;
-    if (m_config.leftMargin > 50) m_config.leftMargin = 50;
+    if (m_config.rightMargin < 2) m_config.rightMargin = 2;
+    if (m_config.rightMargin > 50) m_config.rightMargin = 50;
     if (m_config.topMargin < 2) m_config.topMargin = 2;
     if (m_config.topMargin > 40) m_config.topMargin = 40;
 
@@ -91,7 +82,6 @@ void ConfigManager::Load() {
         std::wstringstream ss(buf);
         std::wstring item;
         while (std::getline(ss, item, L',')) {
-            // Trim whitespace
             item.erase(0, item.find_first_not_of(L" \t\r\n"));
             item.erase(item.find_last_not_of(L" \t\r\n") + 1);
             if (!item.empty()) {
@@ -100,8 +90,6 @@ void ConfigManager::Load() {
             }
         }
     }
-
-    m_config.startWithWindows = IsStartWithWindowsEnabled();
 }
 
 void ConfigManager::Save() {
@@ -110,12 +98,9 @@ void ConfigManager::Save() {
     WritePrivateProfileStringW(INI_SECTION_GENERAL, L"Enabled", m_config.enabled ? L"1" : L"0", iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"ButtonSize", std::to_wstring(m_config.buttonSize).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"ButtonSpacing", std::to_wstring(m_config.buttonSpacing).c_str(), iniPath.c_str());
-    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"LeftMargin", std::to_wstring(m_config.leftMargin).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"RightMargin", std::to_wstring(m_config.rightMargin).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"TopMargin", std::to_wstring(m_config.topMargin).c_str(), iniPath.c_str());
-    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"VerticalAlignment", std::to_wstring(m_config.verticalAlignment).c_str(), iniPath.c_str());
     WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"DimWhenInactive", m_config.dimWhenInactive ? L"1" : L"0", iniPath.c_str());
-    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"ShowHoverSymbols", m_config.showHoverSymbols ? L"1" : L"0", iniPath.c_str());
-    WritePrivateProfileStringW(INI_SECTION_APPEARANCE, L"HideRightButtons", m_config.hideRightButtons ? L"1" : L"0", iniPath.c_str());
 
     std::wstring exclusionsStr;
     for (size_t i = 0; i < m_config.excludedProcesses.size(); ++i) {
@@ -123,8 +108,6 @@ void ConfigManager::Save() {
         exclusionsStr += m_config.excludedProcesses[i];
     }
     WritePrivateProfileStringW(INI_SECTION_EXCLUSIONS, L"ProcessList", exclusionsStr.c_str(), iniPath.c_str());
-
-    SetStartWithWindows(m_config.startWithWindows);
 }
 
 bool ConfigManager::IsProcessExcluded(const std::wstring& processName) const {
@@ -161,7 +144,10 @@ void ConfigManager::RemoveExclusion(const std::wstring& processName) {
     }
 }
 
-bool ConfigManager::IsStartWithWindowsEnabled() const {
+static const wchar_t* RUN_REG_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+static const wchar_t* APP_REG_NAME = L"MacTrafficLights";
+
+bool ConfigManager::IsAutoStartEnabled() const {
     HKEY hKey = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, RUN_REG_KEY, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         DWORD type = 0;
@@ -173,7 +159,7 @@ bool ConfigManager::IsStartWithWindowsEnabled() const {
     return false;
 }
 
-bool ConfigManager::SetStartWithWindows(bool enable) {
+bool ConfigManager::EnableAutoStart(bool enable) {
     HKEY hKey = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, RUN_REG_KEY, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
         if (enable) {

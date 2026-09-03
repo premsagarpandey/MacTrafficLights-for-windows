@@ -2,7 +2,6 @@
 #include "WindowFilter.h"
 #include "Config.h"
 #include "Logger.h"
-#include "Diagnostic.h"
 
 namespace MacTrafficLights {
 
@@ -27,6 +26,38 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     return TRUE;
 }
 
+void CALLBACK OverlayManager::TimerCallback(HWND /*hwnd*/, UINT /*msg*/, UINT_PTR /*id*/, DWORD /*time*/) {
+    OverlayManager::Instance().OnTimerTick();
+}
+
+void OverlayManager::OnTimerTick() {
+    if (!m_enabled) return;
+
+    // 1. High-priority watchdog: ensure the currently active foreground window has its overlay visible and on top
+    HWND fg = GetForegroundWindow();
+    if (fg && WindowFilter::IsEligibleWindow(fg)) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_overlays.find(fg);
+        if (it == m_overlays.end()) {
+            AddOverlayForWindow(fg);
+        } else {
+            if (!IsWindowVisible(it->second->GetHwnd())) {
+                it->second->Show(true);
+            }
+            it->second->SetTargetActive(true);
+            it->second->UpdatePosition();
+        }
+    }
+
+    // 2. Low-frequency sweep every 2 seconds to pick up any new background windows
+    static DWORD lastSweep = 0;
+    DWORD now = GetTickCount();
+    if (now - lastSweep > 2000) {
+        lastSweep = now;
+        ScanExistingWindows();
+    }
+}
+
 bool OverlayManager::Initialize(HINSTANCE hInstance) {
     m_hInstance = hInstance;
 
@@ -35,8 +66,7 @@ bool OverlayManager::Initialize(HINSTANCE hInstance) {
         return false;
     }
 
-    // Install out-of-process WinEvent hooks (Zero code injection!)
-    // 1. Location and resize tracking
+    // Install out-of-process WinEvent hooks
     m_hHookLocation = SetWinEventHook(
         EVENT_OBJECT_LOCATIONCHANGE,
         EVENT_OBJECT_LOCATIONCHANGE,
@@ -46,7 +76,6 @@ bool OverlayManager::Initialize(HINSTANCE hInstance) {
         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
     );
 
-    // 2. Window lifecycle, foreground, and visibility tracking
     m_hHookState = SetWinEventHook(
         EVENT_SYSTEM_FOREGROUND,
         EVENT_OBJECT_HIDE,
@@ -56,7 +85,6 @@ bool OverlayManager::Initialize(HINSTANCE hInstance) {
         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
     );
 
-    // 3. Cloak tracking (virtual desktops, UWP app suspension)
     m_hHookCloaked = SetWinEventHook(
         EVENT_OBJECT_CLOAKED,
         EVENT_OBJECT_UNCLOAKED,
@@ -69,8 +97,11 @@ bool OverlayManager::Initialize(HINSTANCE hInstance) {
     if (!m_hHookLocation || !m_hHookState) {
         LOG_ERROR(L"Failed to install WinEvent hooks");
     } else {
-        LOG_INFO(L"WinEvent hooks successfully installed (out-of-process, zero injection)");
+        LOG_INFO(L"WinEvent hooks successfully installed");
     }
+
+    // 250ms periodic watchdog timer for 100% overlay reliability
+    m_timerId = SetTimer(NULL, 0, 250, TimerCallback);
 
     if (m_enabled) {
         ScanExistingWindows();
@@ -83,6 +114,11 @@ bool OverlayManager::Initialize(HINSTANCE hInstance) {
 }
 
 void OverlayManager::Shutdown() {
+    if (m_timerId) {
+        KillTimer(NULL, m_timerId);
+        m_timerId = 0;
+    }
+
     if (m_hHookLocation) {
         UnhookWinEvent(m_hHookLocation);
         m_hHookLocation = NULL;
@@ -129,18 +165,7 @@ void OverlayManager::SetEnabled(bool enabled) {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (auto& pair : m_overlays) {
             pair.second->Show(true);
-            pair.second->UpdatePosition();
-            pair.second->Render();
-        }
-    }
-}
-
-void OverlayManager::RefreshAllOverlays() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& pair : m_overlays) {
-        if (m_enabled && IsWindow(pair.first) && IsWindowVisible(pair.first)) {
-            pair.second->UpdatePosition();
-            pair.second->Render();
+            pair.second->UpdatePosition(true);
         }
     }
 }
@@ -149,17 +174,14 @@ bool OverlayManager::AddOverlayForWindow(HWND hwnd) {
     if (!m_enabled) return false;
     if (!WindowFilter::IsEligibleWindow(hwnd)) return false;
 
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_overlays.find(hwnd) != m_overlays.end()) {
-        return true; // Already tracked
+        return true;
     }
 
     auto overlay = std::make_unique<OverlayWindow>(hwnd, m_hInstance);
     if (overlay->Create()) {
         overlay->SetTargetActive(hwnd == GetForegroundWindow());
         m_overlays[hwnd] = std::move(overlay);
-        LOG_DEBUG(L"Overlay created for HWND: " + std::to_wstring((uintptr_t)hwnd) + 
-                  L" [" + WindowFilter::GetProcessNameForWindow(hwnd) + L"]");
         return true;
     }
     return false;
@@ -171,7 +193,6 @@ void OverlayManager::RemoveOverlayForWindow(HWND hwnd) {
     if (it != m_overlays.end()) {
         it->second->Destroy();
         m_overlays.erase(it);
-        LOG_DEBUG(L"Overlay removed for HWND: " + std::to_wstring((uintptr_t)hwnd));
     }
 }
 
@@ -182,26 +203,32 @@ void OverlayManager::HandleLocationChange(HWND hwnd) {
     auto it = m_overlays.find(hwnd);
     if (it != m_overlays.end()) {
         it->second->UpdatePosition();
+    } else if (WindowFilter::IsEligibleWindow(hwnd)) {
+        AddOverlayForWindow(hwnd);
     }
 }
 
 void OverlayManager::HandleForegroundChange(HWND newActiveHwnd) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // Update previous foreground window
+    // Deactivate previous foreground window overlay
     if (m_lastForegroundHwnd && m_lastForegroundHwnd != newActiveHwnd) {
         auto it = m_overlays.find(m_lastForegroundHwnd);
         if (it != m_overlays.end()) {
             it->second->SetTargetActive(false);
+            it->second->UpdatePosition();
         }
     }
 
-    // Update new foreground window
+    // Activate and bring forward new active window overlay
     if (newActiveHwnd) {
         auto it = m_overlays.find(newActiveHwnd);
         if (it != m_overlays.end()) {
+            it->second->Show(true);
             it->second->SetTargetActive(true);
-            it->second->UpdatePosition();
+            it->second->UpdatePosition(true);
+        } else if (WindowFilter::IsEligibleWindow(newActiveHwnd)) {
+            AddOverlayForWindow(newActiveHwnd);
         }
     }
 
@@ -216,19 +243,15 @@ void OverlayManager::HandleWindowShow(HWND hwnd) {
     if (!m_enabled) return;
 
     if (!WindowFilter::IsEligibleWindow(hwnd)) {
-        RemoveOverlayForWindow(hwnd);
         return;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_overlays.find(hwnd);
-        if (it != m_overlays.end()) {
-            it->second->Show(true);
-            it->second->UpdatePosition();
-            it->second->Render();
-            return;
-        }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_overlays.find(hwnd);
+    if (it != m_overlays.end()) {
+        it->second->Show(true);
+        it->second->UpdatePosition(true);
+        return;
     }
 
     AddOverlayForWindow(hwnd);
@@ -238,7 +261,10 @@ void OverlayManager::HandleWindowHide(HWND hwnd) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_overlays.find(hwnd);
     if (it != m_overlays.end()) {
-        it->second->Show(false);
+        // Only hide if the window is genuinely invisible or minimized
+        if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) {
+            it->second->Show(false);
+        }
     }
 }
 
@@ -248,9 +274,10 @@ void OverlayManager::HandleWindowMinimize(HWND hwnd, bool minimized) {
     if (it != m_overlays.end()) {
         it->second->Show(!minimized);
         if (!minimized) {
-            it->second->UpdatePosition();
-            it->second->Render();
+            it->second->UpdatePosition(true);
         }
+    } else if (!minimized && WindowFilter::IsEligibleWindow(hwnd)) {
+        AddOverlayForWindow(hwnd);
     }
 }
 
@@ -260,35 +287,21 @@ void OverlayManager::HandleWindowCloak(HWND hwnd, bool cloaked) {
     if (it != m_overlays.end()) {
         it->second->Show(!cloaked);
         if (!cloaked) {
-            it->second->UpdatePosition();
+            it->second->UpdatePosition(true);
         }
+    } else if (!cloaked && WindowFilter::IsEligibleWindow(hwnd)) {
+        AddOverlayForWindow(hwnd);
     }
-}
-
-size_t OverlayManager::GetTrackedCount() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_overlays.size();
-}
-
-size_t OverlayManager::GetActiveOverlayCount() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    size_t active = 0;
-    for (const auto& pair : m_overlays) {
-        if (IsWindowVisible(pair.second->GetHwnd())) {
-            active++;
-        }
-    }
-    return active;
 }
 
 void CALLBACK OverlayManager::WinEventProc(
-    HWINEVENTHOOK hWinEventHook,
+    HWINEVENTHOOK /*hWinEventHook*/,
     DWORD event,
     HWND hwnd,
     LONG idObject,
     LONG idChild,
-    DWORD idEventThread,
-    DWORD dwmsEventTime
+    DWORD /*idEventThread*/,
+    DWORD /*dwmsEventTime*/
 ) {
     // Only process top-level window events
     if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF || !hwnd) {

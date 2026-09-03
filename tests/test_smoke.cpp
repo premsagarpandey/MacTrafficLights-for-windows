@@ -5,7 +5,6 @@
 #include "../include/Config.h"
 #include "../include/WindowFilter.h"
 #include "../include/NativeActions.h"
-#include "../include/Diagnostic.h"
 
 using namespace MacTrafficLights;
 
@@ -18,11 +17,9 @@ void TestConfig() {
     assert(cfg.enabled == true);
     assert(cfg.buttonSize == 12);
     assert(cfg.buttonSpacing == 8);
-    assert(cfg.leftMargin == 14);
+    assert(cfg.rightMargin == 14);
     assert(cfg.topMargin == 10);
     assert(cfg.dimWhenInactive == true);
-    assert(cfg.showHoverSymbols == true);
-    assert(cfg.hideRightButtons == true);
 
     // Test exclusions
     assert(cfgMgr.IsProcessExcluded(L"dwm.exe") == true);
@@ -42,12 +39,12 @@ void TestDpiCalculations() {
 
     int baseSize = 12;
     int baseSpacing = 8;
-    int baseLeft = 14;
+    int baseRight = 14;
 
     // 100% DPI (96)
     assert(MulDiv(baseSize, 96, 96) == 12);
     assert(MulDiv(baseSpacing, 96, 96) == 8);
-    assert(MulDiv(baseLeft, 96, 96) == 14);
+    assert(MulDiv(baseRight, 96, 96) == 14);
 
     // 125% DPI (120)
     assert(MulDiv(baseSize, 120, 96) == 15);
@@ -69,59 +66,52 @@ void TestHitTesting() {
 
     int buttonSize = 12;
     int spacing = 8;
-    int leftMargin = 14;
-    int topMargin = 10;
-    int radius = buttonSize / 2; // 6
-    int centerY = topMargin + radius; // 16
+    int rightMargin = 14;
+    int nativeBtnWidth = 46;
+    int overlayW = 3 * nativeBtnWidth; // 138
+    int overlayH = 38;
 
     auto HitTest = [&](int x, int y) -> int {
-        for (int i = 0; i < 3; ++i) {
-            int centerX = leftMargin + (i * (buttonSize + spacing)) + radius;
-            int dx = x - centerX;
-            int dy = y - centerY;
-            if ((dx * dx + dy * dy) <= ((radius + 1) * (radius + 1))) {
-                return i; // 0 = Red, 1 = Yellow, 2 = Green
-            }
+        if (x < 0 || x > overlayW || y < 0 || y > overlayH) {
+            return -1;
+        }
+        // Slot 1 (Rightmost): Close (2)
+        if (x >= overlayW - nativeBtnWidth) {
+            return 2;
+        }
+        // Slot 2 (Middle): Maximize (1)
+        if (x >= overlayW - 2 * nativeBtnWidth) {
+            return 1;
+        }
+        // Slot 3 (Leftmost): Minimize (0)
+        if (x >= overlayW - 3 * nativeBtnWidth) {
+            return 0;
         }
         return -1;
     };
 
-    // Button 0 (Red) center: leftMargin (14) + radius (6) = 20, y = 16
-    assert(HitTest(20, 16) == 0);
-    assert(HitTest(22, 16) == 0); // slightly off-center
-    assert(HitTest(20, 18) == 0);
+    // Slot 3 (Minimize: Green) - x in [0, 46)
+    assert(HitTest(10, 19) == 0);
+    assert(HitTest(23, 19) == 0);
+    assert(HitTest(45, 19) == 0);
 
-    // Button 1 (Yellow) center: 14 + 1*(12 + 8) + 6 = 40, y = 16
-    assert(HitTest(40, 16) == 1);
+    // Slot 2 (Maximize: Yellow) - x in [46, 92)
+    assert(HitTest(46, 19) == 1);
+    assert(HitTest(69, 19) == 1);
+    assert(HitTest(91, 19) == 1);
 
-    // Button 2 (Green) center: 14 + 2*(12 + 8) + 6 = 60, y = 16
-    assert(HitTest(60, 16) == 2);
-
-    // Gap between button 0 and 1 (x = 30) -> Should hit nothing (-1)
-    assert(HitTest(30, 16) == -1);
+    // Slot 1 (Close: Red) - x in [92, 138]
+    assert(HitTest(92, 19) == 2);
+    assert(HitTest(115, 19) == 2);
+    assert(HitTest(138, 19) == 2);
 
     // Outside bounds
-    assert(HitTest(0, 0) == -1);
-    assert(HitTest(20, 0) == -1);
+    assert(HitTest(-5, 19) == -1);
+    assert(HitTest(140, 19) == -1);
+    assert(HitTest(50, -2) == -1);
+    assert(HitTest(50, 40) == -1);
 
     std::cout << "  -> Hit-Test Tests Passed!" << std::endl;
-}
-
-void TestDiagnostics() {
-    std::cout << "[TEST] Running Diagnostics Tests..." << std::endl;
-
-    auto& diag = DiagnosticManager::Instance();
-    diag.SetCounts(10, 5, true);
-    diag.UpdateMetrics();
-
-    const auto& m = diag.GetMetrics();
-    assert(m.trackedWindowsCount == 10);
-    assert(m.activeOverlaysCount == 5);
-    assert(m.hooksInstalled == true);
-    assert(m.memoryWorkingSetMB >= 0.0);
-    assert(m.cpuUsagePercent >= 0.0 && m.cpuUsagePercent <= 100.0);
-
-    std::cout << "  -> Diagnostics Tests Passed! Working set: " << m.memoryWorkingSetMB << " MB" << std::endl;
 }
 
 void TestWindowFilter() {
@@ -151,7 +141,6 @@ int main() {
     TestConfig();
     TestDpiCalculations();
     TestHitTesting();
-    TestDiagnostics();
     TestWindowFilter();
 
     std::cout << "==========================================" << std::endl;

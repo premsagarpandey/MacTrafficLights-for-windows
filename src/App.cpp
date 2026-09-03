@@ -84,8 +84,9 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
     Logger::Instance().Init();
     LOG_INFO(L"=== MacTrafficLights Starting on Windows 11 ===");
 
-    // 5. Initialize Configuration
+    // 5. Initialize Configuration & Auto-Start with Windows
     ConfigManager::Instance().Load();
+    ConfigManager::Instance().EnableAutoStart(true);
 
     // 6. Initialize System Tray
     if (!TrayIcon::Instance().Initialize(hInstance)) {

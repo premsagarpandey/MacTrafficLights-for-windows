@@ -58,14 +58,11 @@ echo [INFO] Compiling standalone MacTrafficLights.exe (Release x64)...
     src/App.cpp ^
     src/Config.cpp ^
     src/Logger.cpp ^
-    src/Diagnostic.cpp ^
     src/NativeActions.cpp ^
     src/WindowFilter.cpp ^
     src/OverlayWindow.cpp ^
     src/OverlayManager.cpp ^
     src/TrayIcon.cpp ^
-    src/SettingsDialog.cpp ^
-    src/DiagnosticDialog.cpp ^
     bin/MacTrafficLights.res.o ^
     -lgdi32 -luser32 -lshell32 -ldwmapi -lgdiplus -lcomctl32 -lpsapi -ladvapi32 ^
     -o bin/MacTrafficLights.exe
@@ -86,7 +83,6 @@ echo [INFO] Compiling and running Smoke Test Suite...
     tests/test_smoke.cpp ^
     src/Config.cpp ^
     src/Logger.cpp ^
-    src/Diagnostic.cpp ^
     src/NativeActions.cpp ^
     src/WindowFilter.cpp ^
     -lgdi32 -luser32 -lshell32 -ldwmapi -lpsapi -ladvapi32 ^

@@ -21,9 +21,6 @@ public:
 
     // Retrieves the class name of the window
     static std::wstring GetClassNameForWindow(HWND hwnd);
-
-    // Retrieves the window title
-    static std::wstring GetWindowTitle(HWND hwnd);
 };
 
 } // namespace MacTrafficLights

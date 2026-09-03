@@ -19,6 +19,7 @@ bool WindowFilter::IsWindowCloaked(HWND hwnd) {
 }
 
 bool WindowFilter::IsWindowFullScreen(HWND hwnd) {
+    if (IsZoomed(hwnd)) return false;
     if (!hwnd || !IsWindow(hwnd)) return false;
 
     RECT rc = { 0 };
@@ -80,17 +81,6 @@ std::wstring WindowFilter::GetClassNameForWindow(HWND hwnd) {
     return L"";
 }
 
-std::wstring WindowFilter::GetWindowTitle(HWND hwnd) {
-    if (!hwnd || !IsWindow(hwnd)) return L"";
-    int len = GetWindowTextLengthW(hwnd);
-    if (len <= 0) return L"";
-    std::wstring title;
-    title.resize(len + 1);
-    GetWindowTextW(hwnd, &title[0], len + 1);
-    title.resize(len);
-    return title;
-}
-
 bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return false;
     if (hwnd == GetDesktopWindow()) return false;
@@ -122,12 +112,13 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     // Reject tool windows (floating toolbars, tooltips, palettes)
     if (exStyle & WS_EX_TOOLWINDOW) return false;
 
-    // Must have a title bar/caption or be a thick-frame popup (e.g. Chrome/VS Code/Edge)
+    // Must have a title bar/caption, system menu, or be a thick-frame popup (e.g. Chrome/VS Code/Edge)
     bool hasCaption = (style & WS_CAPTION) == WS_CAPTION;
     bool hasThickFrame = (style & WS_THICKFRAME) != 0;
     bool isAppWindow = (exStyle & WS_EX_APPWINDOW) != 0;
+    bool hasSysMenu = (style & WS_SYSMENU) != 0;
 
-    if (!hasCaption && !isAppWindow && !hasThickFrame) {
+    if (!hasCaption && !isAppWindow && !hasThickFrame && !hasSysMenu) {
         return false;
     }
 
@@ -136,7 +127,7 @@ bool WindowFilter::IsEligibleWindow(HWND hwnd) {
     if (!GetWindowRect(hwnd, &rc)) return false;
     int width = rc.right - rc.left;
     int height = rc.bottom - rc.top;
-    if (width < 140 || height < 80) return false;
+    if (width < 100 || height < 40) return false;
 
     // 8. Check Class Name against known shell, system, and desktop classes
     std::wstring cls = GetClassNameForWindow(hwnd);

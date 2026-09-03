@@ -23,7 +23,6 @@ public:
     void Shutdown();
 
     void ScanExistingWindows();
-    void RefreshAllOverlays();
     void SetEnabled(bool enabled);
     bool IsEnabled() const { return m_enabled; }
 
@@ -35,9 +34,7 @@ public:
     void HandleWindowMinimize(HWND hwnd, bool minimized);
     void HandleWindowCloak(HWND hwnd, bool cloaked);
 
-    size_t GetTrackedCount() const;
-    size_t GetActiveOverlayCount() const;
-    bool AreHooksInstalled() const { return m_hHookLocation != NULL; }
+    void OnTimerTick();
 
 private:
     OverlayManager();
@@ -53,12 +50,15 @@ private:
         DWORD dwmsEventTime
     );
 
+    static void CALLBACK TimerCallback(HWND hwnd, UINT msg, UINT_PTR id, DWORD time);
+
     bool AddOverlayForWindow(HWND hwnd);
     void RemoveOverlayForWindow(HWND hwnd);
 
     HINSTANCE m_hInstance = NULL;
     bool m_enabled = true;
     HWND m_lastForegroundHwnd = NULL;
+    UINT_PTR m_timerId = 0;
 
     HWINEVENTHOOK m_hHookLocation = NULL;
     HWINEVENTHOOK m_hHookState = NULL;

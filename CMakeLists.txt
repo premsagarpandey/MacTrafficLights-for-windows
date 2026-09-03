@@ -14,14 +14,11 @@ set(SOURCES
     src/App.cpp
     src/Config.cpp
     src/Logger.cpp
-    src/Diagnostic.cpp
     src/NativeActions.cpp
     src/WindowFilter.cpp
     src/OverlayWindow.cpp
     src/OverlayManager.cpp
     src/TrayIcon.cpp
-    src/SettingsDialog.cpp
-    src/DiagnosticDialog.cpp
     resources/MacTrafficLights.rc
 )
 
@@ -48,7 +45,6 @@ add_executable(test_smoke
     tests/test_smoke.cpp
     src/Config.cpp
     src/Logger.cpp
-    src/Diagnostic.cpp
     src/NativeActions.cpp
     src/WindowFilter.cpp
 )

@@ -13,11 +13,6 @@ public:
     bool Initialize(HINSTANCE hInstance);
     void Shutdown();
 
-    void UpdateTooltip(const std::wstring& text);
-    void ShowBalloonNotification(const std::wstring& title, const std::wstring& message);
-
-    HWND GetMessageHwnd() const { return m_hMsgWnd; }
-
 private:
     TrayIcon();
     ~TrayIcon();

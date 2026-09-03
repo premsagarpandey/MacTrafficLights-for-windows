@@ -1,9 +1,7 @@
 #include "TrayIcon.h"
 #include "Resource.h"
-#include "Config.h"
 #include "OverlayManager.h"
-#include "SettingsDialog.h"
-#include "DiagnosticDialog.h"
+#include "Config.h"
 #include "Logger.h"
 
 namespace MacTrafficLights {
@@ -57,7 +55,7 @@ bool TrayIcon::Initialize(HINSTANCE hInstance) {
     m_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     m_nid.uCallbackMessage = WM_APP_TRAYMSG;
     m_nid.hIcon = hIcon;
-    wcscpy_s(m_nid.szTip, L"MacTrafficLights for Windows 11");
+    wcscpy_s(m_nid.szTip, L"MacTrafficLights for Windows");
 
     if (Shell_NotifyIconW(NIM_ADD, &m_nid)) {
         m_initialized = true;
@@ -65,7 +63,7 @@ bool TrayIcon::Initialize(HINSTANCE hInstance) {
         return true;
     }
 
-    LOG_WARN(L"Shell_NotifyIconW NIM_ADD returned false, will retry or continue in headless/background mode");
+    LOG_WARN(L"Shell_NotifyIconW NIM_ADD returned false, will continue in background mode");
     m_initialized = true;
     return true;
 }
@@ -81,22 +79,6 @@ void TrayIcon::Shutdown() {
     }
 }
 
-void TrayIcon::UpdateTooltip(const std::wstring& text) {
-    if (!m_initialized) return;
-    wcscpy_s(m_nid.szTip, text.c_str());
-    Shell_NotifyIconW(NIM_MODIFY, &m_nid);
-}
-
-void TrayIcon::ShowBalloonNotification(const std::wstring& title, const std::wstring& message) {
-    if (!m_initialized) return;
-    m_nid.uFlags |= NIF_INFO;
-    wcscpy_s(m_nid.szInfoTitle, title.c_str());
-    wcscpy_s(m_nid.szInfo, message.c_str());
-    m_nid.dwInfoFlags = NIIF_INFO;
-    Shell_NotifyIconW(NIM_MODIFY, &m_nid);
-    m_nid.uFlags &= ~NIF_INFO;
-}
-
 void TrayIcon::ShowContextMenu() {
     POINT pt;
     GetCursorPos(&pt);
@@ -105,10 +87,9 @@ void TrayIcon::ShowContextMenu() {
     if (!hMenu) return;
 
     bool isEnabled = OverlayManager::Instance().IsEnabled();
-    bool isStartup = ConfigManager::Instance().IsStartWithWindowsEnabled();
 
     // 1. Header item
-    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"MacTrafficLights v1.0");
+    AppendMenuW(hMenu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"MacTrafficLights");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
 
     // 2. Enable / Disable
@@ -116,16 +97,12 @@ void TrayIcon::ShowContextMenu() {
     AppendMenuW(hMenu, MF_STRING | (!isEnabled ? MF_CHECKED : MF_UNCHECKED), IDM_TRAY_DISABLE, L"&Disable");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
 
-    // 3. Settings & Diagnostics
-    AppendMenuW(hMenu, MF_STRING, IDM_TRAY_SETTINGS, L"&Settings...");
-    AppendMenuW(hMenu, MF_STRING, IDM_TRAY_DIAGNOSTICS, L"&Diagnostics...");
+    // 3. Start with Windows
+    bool isAutoStart = ConfigManager::Instance().IsAutoStartEnabled();
+    AppendMenuW(hMenu, MF_STRING | (isAutoStart ? MF_CHECKED : MF_UNCHECKED), IDM_TRAY_START_WITH_WINDOWS, L"Start with &Windows");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
 
-    // 4. Start with Windows
-    AppendMenuW(hMenu, MF_STRING | (isStartup ? MF_CHECKED : MF_UNCHECKED), IDM_TRAY_START_WITH_WINDOWS, L"Start with &Windows");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-
-    // 5. Exit
+    // 4. Exit
     AppendMenuW(hMenu, MF_STRING, IDM_TRAY_EXIT, L"E&xit");
 
     // Required before TrackPopupMenu so clicking outside dismisses the menu
@@ -140,12 +117,8 @@ LRESULT CALLBACK TrayIcon::MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 
     switch (msg) {
         case WM_APP_TRAYMSG: {
-            if (lParam == WM_RBUTTONUP) {
+            if (lParam == WM_RBUTTONUP || lParam == WM_LBUTTONUP) {
                 if (pThis) pThis->ShowContextMenu();
-            } else if (lParam == WM_LBUTTONDBLCLK) {
-                DiagnosticDialog::Show(pThis->m_hInstance, hwnd);
-            } else if (lParam == WM_LBUTTONUP) {
-                SettingsDialog::Show(pThis->m_hInstance, hwnd);
             }
             return 0;
         }
@@ -161,17 +134,9 @@ LRESULT CALLBACK TrayIcon::MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                     OverlayManager::Instance().SetEnabled(false);
                     break;
 
-                case IDM_TRAY_SETTINGS:
-                    SettingsDialog::Show(pThis->m_hInstance, hwnd);
-                    break;
-
-                case IDM_TRAY_DIAGNOSTICS:
-                    DiagnosticDialog::Show(pThis->m_hInstance, hwnd);
-                    break;
-
                 case IDM_TRAY_START_WITH_WINDOWS: {
-                    bool current = ConfigManager::Instance().IsStartWithWindowsEnabled();
-                    ConfigManager::Instance().SetStartWithWindows(!current);
+                    bool current = ConfigManager::Instance().IsAutoStartEnabled();
+                    ConfigManager::Instance().EnableAutoStart(!current);
                     break;
                 }
 
